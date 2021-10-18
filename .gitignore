@@ -1,3 +1,10 @@
 .DS_Store
 data-raw
 .Rproj.user
+
+data-raw/
+data/sa2_precip
+data/sa2_tmax
+data/sa2_precip_weekly.csv
+data/sa2_tmax_weekly.csv
+
