@@ -1,0 +1,143 @@
+---
+title: "SA2 Weekly Maximum Temperature and Total Precipitation"
+output:
+  html_document:
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, results = 'hide', warning = FALSE, message = FALSE}
+library(sf)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(here)
+library(ggplot2)
+library(patchwork)
+library(terra)
+
+options(scipen = 999)
+
+sa2 <- st_read(here("data-raw/1270055001_sa2_2016_aust_shape/SA2_2016_AUST.shp"))
+precip_2018 <- rast(here("data-raw/precip/agcd_v1_precip_total_r005_daily_2018.nc"))
+tmax_2018 <- rast(here("data-raw/tmax/agcd_v1_tmax_mean_r005_daily_2018.nc"))
+sa2_temp_precip <- read_csv("data/sa2_temp_precip.csv")
+```
+
+## Introduction
+
+This notebook is a quick overview of the sa2_temp_precip dataset. The full code
+for producing the dataset is available on 
+[github](https://github.com/callum-savage/sa2_temp_precip).
+
+The dataset aggregates weekly maximum temperature and total rainfall by 
+statistical area 2 (SA2). SA2 areas are defined by the ABS as medium sized 
+regions representing communities which interact socially and economically. Due 
+to the population distribution in Australia, this means that they vary widely in
+size.
+
+For instance, these are the SA2 areas for the Australian Capital Territory:
+
+```{r}
+sa2_act <- sa2 %>% 
+  filter(STE_NAME16 == "Australian Capital Territory")
+
+plot(sa2_act$geometry, axes = TRUE)
+title("SA2 areas in the ACT")
+```
+
+Version 1 of the Australian Gridded Climate Data (also known as the Australian
+Water Availability Project (AWAP)) is used to access a historical time series of 
+climate variables over all of Australia. Total precipitation and maximum 
+temperature data is available in a raster file with cells of size 0.05 degrees
+square (around 5 km square).
+
+On January 8 2018 the precipitation across the ACT looks like
+this (this day was chosen simply because their is a lot of variation in 
+rainfall):
+
+```{r}
+precip_2018_act <- crop(precip_2018, sa2_act, snap = "out")
+
+plot(precip_2018_act[[8]], plg = list(title = "Precipitation (mm)"))
+plot(sa2_act$geometry, add = TRUE)
+title("Rainfall in the ACT on January 8, 2018")
+```
+
+We could also make a similar plot for temperature data on the same day:
+
+```{r}
+tmax_2018_act <- crop(tmax_2018, sa2_act, snap = "out")
+
+plot(tmax_2018_act[[8]], plg = list(title = "Temperature (deg C)"))
+plot(sa2_act$geometry, add = TRUE)
+title("Temperature in the ACT on January 8, 2018")
+```
+
+## Method
+
+The method used to create the final data set depends upon identifying which 
+raster squares overlap with which SA2 areas, and then applying a summary 
+function to the raster values. The result is then aggregated by week.
+
+In the case of total weekly rainfall, this means that the rainfall in each cell
+is first multiplied by the cell area to get a volume of rainfall. We then take
+a weighted sum of these rainfalls by the amount each cell overlaps with each
+SA2 area. The final value is divided by the area of the SA2 region to return the
+output back to mm. The rainfall in mm is then summed in each week.
+
+Calculating the maximum temperature in each SA2 is simpler - we just need to
+find the highest cell value in each SA2 area (regardless of overlap). We can 
+then take the maximum again by week to get a weekly maximum temperature.
+
+Note that weeks have simply been defined as 7 day periods starting on Mondays.
+As we are interested in the years 2000 - 2018, a result of this definition of 
+weeks is that the first week has to start in in 1999, and the last one ends in 
+2019.
+
+The output looks something like this, where weekly_precip is in mm and 
+weekly_tmax is in degress celcius (this is the data for Majura only):
+
+```{r}
+majura_temp_precip <- sa2_temp_precip %>% 
+  filter(SA2_NAME16 == "Majura")
+
+majura_temp_precip
+```
+
+Or, the same data graphically:
+
+```{r}
+p1 <- majura_temp_precip %>% 
+  ggplot(aes(x = week_starting, y = weekly_precip)) +
+  geom_line()
+
+p2 <- majura_temp_precip %>% 
+  ggplot(aes(x = week_starting, y = weekly_tmax)) +
+  geom_line()
+
+p1 / p2 + plot_annotation("Weekly maximum temperature and total precipitation in the Majura SA2 area")
+```
+
+## Assumptions and limitations
+
+* The data set used (AWAP) was developed for looking at long term climate 
+trends. As such, it only used gauge data maintained by the BOM. More accurate
+data could be obtained by including remote sensing or radar data.
+
+* Rainfall data represents precipitation in the 24-hour period to 0900 local 
+time. When aggregated by week, this means that weeks actually start on at 9 AM 
+on a Monday rather than midnight.
+
+* The RMSEs for temperature are typically between 0.5 and 1 degree celcius. For 
+rainfall, the RMSE is typically between 3 and 4 mm. The analysis is less 
+accurate where the station network is sparse (remote areas) or where there is a 
+sharp climatic gradient (e.g. coastal areas).
+
+* The continuous temperature and precipitation surfaces have been generated
+using often sparse gauge data. As a result, the maximum temperature identified
+in a raster cell exceedes the maximum value at a gauge site.
+
+For more information on the errors and methodology of the AWAP data set, see
+
+Jones, D, W Wang, and R Fawcett. “High-Quality Spatial Climate Data-Sets for Australia.” Australian Meteorological and Oceanographic Journal 58, no. 04 (December 2009): 233–48. https://doi.org/10.22499/2.5804.003.
