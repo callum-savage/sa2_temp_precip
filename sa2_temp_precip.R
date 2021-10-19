@@ -56,8 +56,6 @@ library(lubridate)        # Improved date management
 library(readr)            # File read/write
 library(arrow)            # Feather file format
 library(assertr)          # Data quality checks
-library(rsync)            # rsync interface (github INWTlab/rsync)
-library(RCurl)            # For scp from NCI
 
 # Turn off scientific notatIon
 
@@ -120,7 +118,7 @@ if (length(missing_files) > 0) {
 # Create a dummy raster with the same dimensions as the actual data. The 
 # dimensions are very important as we will be joining by cell number.
 
-rast_crs <- "EPSG:4283" # or maybe EPSG:9001, not 100% sure what the CRS is?
+rast_crs <- "EPSG:4283" # or maybe EPSG:9001, not 100% which CRS to use?
 
 dummy_rast <- rast(
     nrows = 691,
@@ -180,12 +178,6 @@ sa2_cells <- dummy_rast %>%
 # In this section we will define a function to join the SA2 IDs to a year's 
 # worth of precipitation data. The output for each year will be saved locally in 
 # data/sa2_precip
-
-# Define the join function. This function is a little dodgy as it makes several
-# calls outside the function environment. A potential enhancement to this
-# script is to generalise this function for an arbitrary variable and 
-# arbitrary summary function, and also to ensure that the function doesn't look
-# outside its environment.
 
 sa2_precip_join <- function(year,
                             sa2_cells = sa2_cells,
@@ -329,10 +321,6 @@ sa2_precip_weekly <- sa2_precip_weekly %>%
   mutate(weekly_precip = weekly_precip / AREASQKM16) %>% 
   arrange(SA2_MAIN16, week_starting)
 
-# Save the precipitation output as a safeguard
-
-write_csv(sa2_precip_weekly, here("data/sa2_precip_weekly.csv"))
-
 # Join SA2 to temperature data --------------------------------------------
 
 # We now more or less repeat the process for the temperature data
@@ -457,10 +445,6 @@ sa2_tmax_weekly <- week_filter(sa2_tmax_weekly, target_years)
 # Now we just need to add back in the rest of the statistical area specification
 
 sa2_tmax_weekly <- inner_join(sa2_spec, sa2_tmax_weekly, by = "SA2_5DIG16")
-
-# Save the weekly tmax output as a safeguard
-
-write_csv(sa2_tmax_weekly, here("data/sa2_tmax_weekly.csv"))
 
 # Combine precip and tmax data --------------------------------------------
 
